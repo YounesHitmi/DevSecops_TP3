@@ -192,12 +192,45 @@ jobs:
       - run:
           name: Run phploc
           command: |
+            set -o pipefail
             mkdir -p reports
             php phploc.phar src public | tee reports/phploc.txt
       - store_artifacts:
           path: reports/phploc.txt
           destination: phploc-report/phploc.txt
 
+
+  lint-phpmd:
+    executor: php-executor
+    steps:
+      - *attach_workspace
+      - run:
+          name: Run PHPMD (rules in phpmd.xml)
+          command: |
+            mkdir -p reports
+            ./vendor/bin/phpmd analyze src public \
+              --ruleset phpmd.xml \
+              --format text \
+              --reportfile-html reports/phpmd.html \
+              --no-progress
+      - store_artifacts:
+          path: reports/phpmd.html
+          destination: phpmd-report/phpmd.html
+
+
+  lint-php-doc-check:
+    executor: php-executor
+    steps:
+      - *attach_workspace
+      - run:
+          name: Run php-doc-check (complex code must be documented)
+          command: |
+            set -o pipefail
+            mkdir -p reports
+            ./vendor/bin/php-doc-check src public | tee reports/php-doc-check.txt
+      - store_artifacts:
+          path: reports/php-doc-check.txt
+          destination: php-doc-check-report/php-doc-check.txt
 
 
   build-docker-image:
@@ -280,6 +313,12 @@ workflows:
           requires:
             - build-setup
       - metrics-phploc:
+          requires:
+            - build-setup
+      - lint-phpmd:
+          requires:
+            - build-setup
+      - lint-php-doc-check:
           requires:
             - build-setup
       - hold:
