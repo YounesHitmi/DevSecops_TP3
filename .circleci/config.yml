@@ -54,12 +54,12 @@ executors:
     shell: /bin/bash
     docker:
       - name: localhost
-        image: cimg/php:8.1
+        image: cimg/php:8.2
   builder-executor:
     resource_class: small
     shell: /bin/bash
     docker:
-      - image: cimg/php:8.1-node
+      - image: cimg/php:8.2-node
         name: localhost
   simple-executor:
     resource_class: small
@@ -193,7 +193,7 @@ jobs:
 
             # Build the Docker image
             docker build \
-            -f docker/Dockerfile \
+            -f Docker/Dockerfile \
             -t $REPOSITORY:$TAG \
             --build-arg BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
             --build-arg TAG="${TAG}" \
@@ -253,14 +253,14 @@ workflows:
                 - main
                 - master
                 - /^release\/.*/
-      - deploy-ssh-production:
-          requires:
-              - hold
-          filters:
-            branches:
-              only:
-                - main
-                - master
+      #- deploy-ssh-production:
+      #    requires:
+      #        - hold
+      #    filters:
+      #      branches:
+      #        only:
+      #          - main
+      #         - master
       - deploy-ssh-staging:
           requires:
             - hold
