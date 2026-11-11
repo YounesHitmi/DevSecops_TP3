@@ -106,5 +106,14 @@ RUN mkdir -p /var/www/html/vendor \
 #Change permission to allow app to work properly
 RUN chown -R www-data:www-data /var/www/html
 
+# Start-up script: gets the secrets from Infisical when credentials are given.
+# It is copied outside the web root and is not served by Apache.
+RUN mv /var/www/html/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Exposez le port 80
 EXPOSE 80
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+# Defining an ENTRYPOINT resets the CMD of the base image, so we set it again.
+CMD ["apache2-foreground"]
