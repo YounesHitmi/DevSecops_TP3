@@ -9,7 +9,10 @@
   },
   "require-dev": {
     "roave/security-advisories": "dev-latest",
-    "phpunit/phpunit": "^10.3.2"
+    "phpunit/phpunit": "^10.3.2",
+    "phpmetrics/phpmetrics": "^2.11",
+    "phpmd/phpmd": "^3.0",
+    "niels-de-blaauw/php-doc-check": "^0.4.1"
   },
   "autoload": {
     "psr-4": {
@@ -19,6 +22,11 @@
   "autoload-dev": {
     "psr-4": {
       "Tests\\": "tests/"
+    }
+  },
+  "config": {
+    "platform": {
+      "php": "8.2.0"
     }
   }
 }

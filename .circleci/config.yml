@@ -165,6 +165,74 @@ jobs:
           command: ./vendor/bin/phpunit --testsuite=Unit
 
 
+  metrics-phpmetrics:
+    executor: php-executor
+    steps:
+      - *attach_workspace
+      - run:
+          name: Generate PhpMetrics report
+          command: ./vendor/bin/phpmetrics --report-html=reports/phpmetrics src
+      - store_artifacts:
+          path: reports/phpmetrics
+          destination: phpmetrics-report
+
+
+  metrics-phploc:
+    executor: php-executor
+    environment:
+      PHPLOC_VERSION: 7.0.2
+      PHPLOC_SHA256: 3d59778ec86faf25fd00e3a329b2f9ad4a3c751ca91601ea7dab70f887b0bf46
+    steps:
+      - *attach_workspace
+      - run:
+          name: Download phploc (pinned version + checksum)
+          command: |
+            curl -sSfL -o phploc.phar "https://phar.phpunit.de/phploc-${PHPLOC_VERSION}.phar"
+            echo "${PHPLOC_SHA256}  phploc.phar" | sha256sum -c -
+      - run:
+          name: Run phploc
+          command: |
+            set -o pipefail
+            mkdir -p reports
+            php phploc.phar src public | tee reports/phploc.txt
+      - store_artifacts:
+          path: reports/phploc.txt
+          destination: phploc-report/phploc.txt
+
+
+  lint-phpmd:
+    executor: php-executor
+    steps:
+      - *attach_workspace
+      - run:
+          name: Run PHPMD (rules in phpmd.xml)
+          command: |
+            mkdir -p reports
+            ./vendor/bin/phpmd analyze src public \
+              --ruleset phpmd.xml \
+              --format text \
+              --reportfile-html reports/phpmd.html \
+              --no-progress
+      - store_artifacts:
+          path: reports/phpmd.html
+          destination: phpmd-report/phpmd.html
+
+
+  lint-php-doc-check:
+    executor: php-executor
+    steps:
+      - *attach_workspace
+      - run:
+          name: Run php-doc-check (complex code must be documented)
+          command: |
+            set -o pipefail
+            mkdir -p reports
+            ./vendor/bin/php-doc-check src public | tee reports/php-doc-check.txt
+      - store_artifacts:
+          path: reports/php-doc-check.txt
+          destination: php-doc-check-report/php-doc-check.txt
+
+
   build-docker-image:
     executor: builder-executor
     steps:
@@ -239,6 +307,18 @@ workflows:
           requires:
             - build-setup
       - test-phpunit:
+          requires:
+            - build-setup
+      - metrics-phpmetrics:
+          requires:
+            - build-setup
+      - metrics-phploc:
+          requires:
+            - build-setup
+      - lint-phpmd:
+          requires:
+            - build-setup
+      - lint-php-doc-check:
           requires:
             - build-setup
       - hold:
