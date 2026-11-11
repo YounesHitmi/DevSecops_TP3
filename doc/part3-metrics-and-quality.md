@@ -1,66 +1,65 @@
-# Part 3 (points 1 and 2) – Code metrics and quality gates in the pipeline
+# Partie 3 (points 1 et 2) – Métriques et qualité du code dans le pipeline
 
-Goal of this part (from the TP subject):
+Objectifs de cette partie (d'après le sujet du TP) :
 
-1. **3.1** Add two automatic code evaluation jobs to the pipeline: `phpmetrics/phpmetrics` and `phploc`.
-2. **3.2** Integrate code quality tools in the pipeline: `phpmd` and `niels-de-blaauw/php-doc-check`.
+1. **Évaluation du code** : ajouter deux jobs d'évaluation automatique du code, avec phpmetrics et phploc.
+2. **Qualité du code** : intégrer des outils de vérification de la qualité, avec phpmd et php-doc-check.
 
-Date: 10–11/11/2026 – Branch: `feature/part3-metrics-quality-v2`.
-Every command was first run **locally**, then added to `.circleci/config.yml`.
-We only **added** jobs: no existing job was changed.
+> Le travail est sur la branche `feature/part3-metrics-quality-v2`. Les captures d'écran sont dans `screenshots/`.
 
----
-
-## 1. Overview
-
-| Job | Tool | Type | Blocks the pipeline? | Artifact |
-|---|---|---|---|---|
-| `metrics-phpmetrics` | PhpMetrics 2.11.0 | Metrics | No (informs) | HTML report `phpmetrics-report/` |
-| `metrics-phploc` | phploc 7.0.2 (PHAR) | Metrics | No (informs) | `phploc-report/phploc.txt` |
-| `lint-phpmd` | PHPMD 3.0.0 | Quality gate | **Yes** | `phpmd-report/phpmd.html` |
-| `lint-php-doc-check` | php-doc-check 0.4.1 | Quality gate | **Yes** | `php-doc-check-report/php-doc-check.txt` |
-
-The 4 jobs only need `build-setup` (`composer install` + `persist_to_workspace`). They get the code and `vendor/` with `attach_workspace` and run **in parallel** with `lint-phpcs`, `security-check-dependencies` and `test-phpunit`.
-
-![Workflow with the 4 new jobs, all green](screenshots/part3-ci-workflow-green.png)
-
-*Pipeline #8 on `feature/part3-metrics-quality-v2`: all jobs pass, including the 4 new ones.*
-
-**Metrics vs quality gates.** A metric (size, complexity, coupling) has no "good" or "bad" value by itself: those jobs only **inform**, and keep their report as an artifact. A quality gate checks rules: if the code breaks a rule, the tool returns a non-zero exit code and **the job fails**.
-This is on purpose the opposite of the existing `lint-phpcs` job, whose `if [ $result -eq 1 ] || [ $result -eq 2 ]; then exit 0` turns every error into a success: it never blocks bad code (see section 5).
+Nous avons seulement **ajouté** des jobs au fichier `.circleci/config.yml`, sans modifier les jobs existants. Chaque commande a d'abord été testée en local avant d'être mise dans la CI.
 
 ---
 
-## 2. How the tools are installed
+## 1. Vue d'ensemble
 
-Two options were possible:
+| Job | Outil | Rôle | Bloque le pipeline ? |
+|---|---|---|---|
+| `metrics-phpmetrics` | PhpMetrics | Métriques | Non |
+| `metrics-phploc` | phploc | Métriques | Non |
+| `lint-phpmd` | PHPMD | Qualité | Oui |
+| `lint-php-doc-check` | php-doc-check | Qualité | Oui |
 
-- **A.** `composer require --dev <tool>` **inside each job** (what `lint-phpcs` does).
-- **B.** Add the tools **once** in `require-dev`, commit `composer.json` and `composer.lock`. `build-setup` installs them, and the jobs get them from the workspace.
+Les noms suivent la convention proposée en haut du fichier de configuration : `metrics-` pour les métriques et `lint-` pour la qualité du code.
 
-We chose **B**:
+Les quatre jobs attendent seulement `build-setup`, qui installe les dépendances. Ils récupèrent ensuite le projet avec `attach_workspace` et tournent en parallèle des jobs déjà présents.
 
-- **Reproducibility**: `composer.lock` pins the exact version, so the CI uses the version we tested locally. With A, every run takes the latest published version: a job can break without any change in our code.
-- **Supply chain security**: with A, a compromised version published on Packagist would be installed and run by the CI right away. With B, nothing changes without an explicit decision (`composer update` + commit). "Latest version = safer" is a misconception: the good practice is to **pin versions and be alerted** (`security-check-dependencies` already scans `composer.lock`; Dependabot or Renovate could open update PRs tested by the CI).
-- **Performance**: installed once in `build-setup`, with cache.
-- The tools themselves are **scanned** by `security-check-dependencies`, since they are in the lock file.
+![Workflow avec les 4 nouveaux jobs](screenshots/part3-ci-workflow-green.png)
+
+Nous avons fait une différence entre deux types de jobs :
+
+- **Les jobs de métriques** mesurent le code : nombre de lignes, complexité, etc. Ces chiffres ne sont ni bons ni mauvais en soi, donc ces jobs ne bloquent rien. Ils gardent juste leur rapport dans l'onglet *Artifacts* de CircleCI.
+- **Les jobs de qualité** vérifient des règles. Si le code ne les respecte pas, l'outil renvoie une erreur et le job échoue, ce qui bloque le pipeline.
+
+---
+
+## 2. Installation des outils
+
+Plutôt que d'installer les outils dans chaque job avec `composer require`, nous les avons ajoutés une seule fois dans les dépendances de développement du projet :
 
 ```bash
-composer config platform.php 8.2.0
 composer require --dev phpmetrics/phpmetrics phpmd/phpmd niels-de-blaauw/php-doc-check
 ```
 
-**Why `platform.php = 8.2.0`**: our machine has PHP 8.5, the CI image (`cimg/php:8.2`) and the Docker image (`php:8.2-apache`) have PHP 8.2. Without this setting, Composer picked versions for PHP 8.5 (for example Symfony 8.1, which needs PHP ≥ 8.4): it worked locally but would have broken in the CI. With it, Composer picks Symfony 7.4.
+Ainsi, les versions sont fixées dans `composer.lock`. La CI utilise donc exactement les versions testées en local, et un outil ne peut pas changer de version sans que nous le décidions. C'est plus sûr : une nouvelle version d'un paquet pourrait contenir un bug ou du code malveillant. Les outils sont aussi installés une seule fois, dans `build-setup`, au lieu d'une fois par job.
 
-The Docker image is not affected: the `Dockerfile` runs `composer install --no-dev`.
+Notre PC a une version de PHP plus récente que celle de la CI et de Docker, qui utilisent PHP 8.2. Nous avons donc indiqué à Composer de choisir des versions compatibles avec PHP 8.2 :
 
-`/reports` was added to `.gitignore`: reports are generated files, they are not versioned.
+```bash
+composer config platform.php 8.2.0
+```
+
+Sans ce réglage, Composer installait des paquets qui fonctionnaient chez nous mais pas dans la CI.
+
+L'image Docker n'est pas concernée, car elle installe uniquement les dépendances de production.
+
+Enfin, le dossier `reports/`, où les outils écrivent leurs rapports, est ajouté au `.gitignore` : ce sont des fichiers générés, il n'y a pas de raison de les versionner.
 
 ---
 
-## 3. Point 3.1 – Metrics jobs
+## 3. Les jobs de métriques
 
-### 3.1 `metrics-phpmetrics`
+### 3.1 PhpMetrics
 
 ```yaml
   metrics-phpmetrics:
@@ -75,18 +74,22 @@ The Docker image is not affected: the `Dockerfile` runs `composer install --no-d
           destination: phpmetrics-report
 ```
 
-Result on `src/`: 1 class, 3 methods, 43 lines of code, average cyclomatic complexity of 2, **0 violations**.
+PhpMetrics produit un rapport HTML. Sur notre projet, il trouve une classe de 43 lignes, une complexité faible et aucun problème.
 
-![PhpMetrics report (CircleCI artifact)](screenshots/part3-report-phpmetrics.png)
+![Rapport PhpMetrics](screenshots/part3-report-phpmetrics.png)
 
-*The PhpMetrics HTML report, opened from the CircleCI artifacts.*
+Le rapport est conservé avec le build, dans l'onglet *Artifacts* :
 
-### 3.2 `metrics-phploc`
+![Onglet Artifacts du job PhpMetrics](screenshots/part3-ci-artifacts-phpmetrics.png)
 
-`phploc` is no longer maintained (archived repository) and its Composer package is not compatible with PHPUnit 10, used by the project. We use the **official PHAR** instead. Since we download an executable from the Internet, we apply the same principle as the lock file:
+### 3.2 phploc
 
-1. **Pinned version**: `phploc-7.0.2.phar`, not `phploc.phar` (which always points to the latest one).
-2. **SHA-256 check before running it**: if the file on the server is changed or corrupted, `sha256sum -c` fails and the job stops **before** running it. The checksum was computed locally, and was the same on two independent downloads.
+phploc n'est plus maintenu, et sa version Composer n'est pas compatible avec la version de PHPUnit du projet. Nous utilisons donc le fichier PHAR officiel, c'est-à-dire l'outil complet dans un seul fichier téléchargeable.
+
+Comme on télécharge un programme depuis Internet, nous avons pris deux précautions :
+
+- nous téléchargeons une version précise, la 7.0.2, et pas « la dernière » ;
+- nous vérifions l'empreinte SHA-256 du fichier avant de l'exécuter. Si le fichier a été modifié sur le serveur, la vérification échoue et le job s'arrête avant de le lancer.
 
 ```yaml
   metrics-phploc:
@@ -112,29 +115,29 @@ Result on `src/`: 1 class, 3 methods, 43 lines of code, average cyclomatic compl
           destination: phploc-report/phploc.txt
 ```
 
-- Version and checksum are together in `environment:` so they are updated **together**.
-- `curl -f` makes the command fail on an HTTP error (otherwise the error page would be saved as if it was the PHAR).
-- `tee` sends the output to the CI log **and** to a file for the artifact. `set -o pipefail` is explained in section 4.2.
+Dans la CI, on voit bien la vérification passer avant que phploc soit lancé :
 
-![phploc report (CircleCI artifact)](screenshots/part3-report-phploc.png)
+![Vérification de l'empreinte de phploc](screenshots/part3-ci-job-phploc-checksum.png)
 
-*phploc on `src` and `public`: 3 files, 94 lines, 1 class, 3 methods, average method complexity 1.33.*
+`tee` affiche le résultat dans le log de CircleCI et l'écrit aussi dans un fichier, qu'on garde comme artefact. La ligne `set -o pipefail` est expliquée plus bas, en 4.2.
+
+![Rapport phploc](screenshots/part3-report-phploc.png)
 
 ---
 
-## 4. Point 3.2 – Quality gates
+## 4. Les jobs de qualité
 
-### 4.1 `lint-phpmd`
+### 4.1 PHPMD
 
-First run with the default rulesets: **3 violations** in `src/ImageCreator.php`, exit code 2:
+Au premier lancement, PHPMD a trouvé trois remarques dans `src/ImageCreator.php` :
 
-- `ShortVariable`: `$im` (less than 3 characters);
-- `Superglobals` ×2: access to `$_ENV`.
+- la variable `$im` a un nom trop court ;
+- le code lit deux fois la variable `$_ENV`.
 
-For each violation we had 3 options: fix the code, allow **this precise rule** with a written reason, or disable the tool (excluded: we would lose the gate). We did not change the code of the application (written by another member of the group). The rules are in **`phpmd.xml`** at the root (like `phpcs.xml`), each exception has a comment with its reason:
+Nous n'avons pas voulu modifier le code de l'application, et ces deux cas sont normaux ici. Nous avons donc écrit nos règles dans un fichier `phpmd.xml`, comme le projet le fait déjà pour `phpcs.xml`, avec deux exceptions commentées :
 
-- `Superglobals` is excluded: `vlucas/phpdotenv` puts the `.env` variables in `$_ENV`, that is how the library is meant to be used.
-- `ShortVariable` is kept, with an exception **only for `$im`** (the usual name of a GD image in the PHP documentation). Any other short variable is still reported.
+- l'accès à `$_ENV` est autorisé, parce que c'est là que la bibliothèque `phpdotenv` range les variables du fichier `.env` ;
+- `$im` est autorisé, parce que c'est le nom habituel d'une image dans la documentation PHP. Les autres noms trop courts restent interdits.
 
 ```yaml
   lint-phpmd:
@@ -155,17 +158,13 @@ For each violation we had 3 options: fix the code, allow **this precise rule** w
           destination: phpmd-report/phpmd.html
 ```
 
-- No `if ... exit 0`: exit code 2 makes the job fail.
-- `--format text` prints the violations in the CI log, `--reportfile-html` writes the HTML artifact, in one run.
-- No `when: always` on `store_artifacts`: this step **always** runs, even after a failed step, and the `when` key is not supported on it. The red pipeline below proves it: the report of the failed job is available.
+Les problèmes trouvés s'affichent dans le log, et un rapport HTML est gardé comme artefact. Si PHPMD trouve un problème, il renvoie une erreur et le job échoue.
 
-![PHPMD report on the project](screenshots/part3-report-phpmd.png)
+![Rapport PHPMD sur le projet](screenshots/part3-report-phpmd.png)
 
-*With `phpmd.xml`: 0 problems on the project code.*
+### 4.2 php-doc-check
 
-### 4.2 `lint-php-doc-check`
-
-The tool reports **complex functions without a doc comment** (`/** */`). It measures cognitive complexity: ≥ 4 without doc = warning, ≥ 6 without doc = **error** (exit code 1). On the project: `...` (3 files analysed, nothing to report).
+Cet outil vérifie que les fonctions compliquées ont un commentaire de documentation. Si une fonction est trop complexe et n'est pas documentée, il renvoie une erreur. Notre projet passe sans remarque.
 
 ```yaml
   lint-php-doc-check:
@@ -183,48 +182,38 @@ The tool reports **complex functions without a doc comment** (`/** */`). It meas
           destination: php-doc-check-report/php-doc-check.txt
 ```
 
-**Trap: the exit code lost in a pipe.** In a pipe, bash keeps the exit code of the **last** command: `tee`, which always succeeds. Without care, the gate would never block. CircleCI normally uses `/bin/bash -eo pipefail`, but the executors of the project set `shell: /bin/bash` **without options**, which removes this default. So we put `set -o pipefail` on the first line: the pipe fails if **any** command fails. The same fix is in the *Run phploc* step: without it, a crash of phploc would give a green job without report.
+Nous sommes tombés sur un piège avec `tee`. Quand on enchaîne deux commandes avec `|`, bash ne garde que le résultat de la dernière, ici `tee`, qui réussit toujours. L'erreur de php-doc-check était donc perdue et le job restait vert. La ligne `set -o pipefail` corrige ça : le job échoue si l'une des commandes échoue. Nous l'avons mise aussi dans le job phploc, qui utilise `tee` de la même façon.
 
 ---
 
-## 5. Proof that the gates block bad code
+## 5. Vérification : les jobs de qualité bloquent bien
 
-A gate that never fails proves nothing: we had to check that we did not just "silence" the tools to get a green job. We pushed a throwaway branch, `test/part3-quality-gate-fail` (never merged), with an intentionally bad file `src/BadExample.php`: a method `run($a, $unused)` with an unused parameter, a short variable name and 4 nested `if` without documentation.
+Un job de qualité qui ne passe jamais au rouge ne prouve rien. Pour le vérifier, nous avons poussé une branche de test, `test/part3-quality-gate-fail`, avec un fichier volontairement mal écrit : un paramètre inutilisé, une variable `$a` et une fonction compliquée sans documentation. Cette branche n'est pas destinée à être fusionnée.
 
-![Pipeline with the two gates in red](screenshots/part3-ci-workflow-gates-red.png)
+![Pipeline avec les deux jobs de qualité en échec](screenshots/part3-ci-workflow-gates-red.png)
 
-*Pipeline #9: `lint-phpmd` and `lint-php-doc-check` fail, so the workflow fails. The metrics jobs stay green (they do not block), and `test-phpunit` is green (the code still works).*
+Résultat : `lint-phpmd` et `lint-php-doc-check` échouent, donc le pipeline échoue. Les jobs de métriques restent verts, ce qui est normal puisqu'ils ne bloquent pas.
 
-![PHPMD report of the failed job](screenshots/part3-report-phpmd-fail.png)
+PHPMD signale le paramètre inutilisé et la variable `$a`. On voit donc que l'exception pour `$im` ne laisse pas passer les autres noms courts :
 
-*PHPMD finds `UnusedFormalParameter` (`$unused`) and `ShortVariable` (`$a`): the `$im` exception is precise, `$a` is still refused. The report is available even though the job failed.*
+![Log du job PHPMD en échec](screenshots/part3-ci-job-phpmd-fail.png)
 
-![php-doc-check report of the failed job](screenshots/part3-report-doccheck-fail.png)
+php-doc-check signale la fonction non documentée. Grâce à `pipefail`, l'erreur arrive bien jusqu'à CircleCI :
 
-*php-doc-check: `run()` has no documentation and a cognitive complexity of 7 → error, exit code 1, which goes through `tee` thanks to `pipefail`.*
+![Log du job php-doc-check en échec](screenshots/part3-ci-job-doccheck-fail.png)
 
-Note: on the same pipeline, **`lint-phpcs` is green** even with this bad code. This confirms that the existing job never blocks anything (its `exit 0` hides errors). To be discussed in part 5.
+Même quand le job échoue, le rapport reste disponible dans les artefacts, ce qui permet de voir ce qui ne va pas :
 
----
+![Artefacts du job PHPMD en échec](screenshots/part3-ci-artifacts-phpmd-fail.png)
 
-## 6. Tests done
+![Rapport PHPMD du job en échec](screenshots/part3-report-phpmd-fail.png)
 
-| Test | Where | Result |
-|---|---|---|
-| `composer install` + PHPUnit (existing test) | Local + CI | OK (1 test, 1 assertion): nothing broken |
-| PhpMetrics | Local + CI | 0 violation, HTML report as artifact |
-| phploc checksum + run | Local + CI | `sha256sum: OK`, report as artifact |
-| PHPMD with `phpmd.xml` | Local + CI | 0 problem, exit code 0 |
-| php-doc-check | Local + CI | `...`, exit code 0 |
-| **Negative** PHPMD and php-doc-check | Local + CI (`test/part3-quality-gate-fail`) | Exit codes 2 and 1, jobs **red** |
-| `config.yml` | parsed with `symfony/yaml` + accepted by CircleCI | 4 jobs defined and listed in `main_workflow` |
-| Docker image build (`container_workflow`) | CI | Green, dev tools not in the image (`--no-dev`) |
+![Rapport php-doc-check du job en échec](screenshots/part3-report-doccheck-fail.png)
+
+Nous avons aussi vérifié que nos ajouts ne cassent rien : le test PHPUnit passe toujours, l'application fonctionne dans Docker et l'image Docker se construit toujours dans la CI.
 
 ---
 
-## 7. Ideas for part 5
+## 6. Remarque pour la suite
 
-- `lint-phpcs` never blocks (`exit 0` on errors): make it a real gate.
-- `composer audit` reports 2 vulnerabilities that were already there before our changes: `nesbot/carbon` CVE-2025-22145 (medium, fixed in 2.72.6) and `phpunit/phpunit` CVE-2026-24765 (high, fixed in 10.5.62).
-- Dependabot or Renovate to propose dependency updates as PRs tested by the CI.
-- `security-check-dependencies` downloads its binary without checksum: apply the same check as for phploc.
+Sur la branche de test, le job existant `lint-phpcs` est resté vert malgré le mauvais code. Son script transforme les erreurs en succès, donc il ne bloque jamais rien. C'est un point à reprendre dans la partie 5 sur la sécurité.
