@@ -1,0 +1,70 @@
+{
+    "taskDefinitionArn": "arn:aws:ecs:eu-north-1:065431568326:task-definition/polished-service-1b8o1s:1",
+    "containerDefinitions": [
+        {
+            "name": "Main",
+            "image": "065431568326.dkr.ecr.eu-north-1.amazonaws.com/pns/devsecops/tp3:latest",
+            "cpu": 0,
+            "memory": 2048,
+            "memoryReservation": 1024,
+            "portMappings": [
+                {
+                    "containerPort": 80,
+                    "hostPort": 80,
+                    "protocol": "tcp",
+                    "name": "main-80-tcp",
+                    "appProtocol": "http"
+                }
+            ],
+            "essential": true,
+            "environment": [],
+            "environmentFiles": [],
+            "mountPoints": [],
+            "volumesFrom": [],
+            "ulimits": [],
+            "systemControls": []
+        }
+    ],
+    "family": "polished-service-1b8o1s",
+    "executionRoleArn": "arn:aws:iam::065431568326:role/ecsTaskExecutionRole",
+    "networkMode": "awsvpc",
+    "revision": 1,
+    "volumes": [],
+    "status": "ACTIVE",
+    "requiresAttributes": [
+        {
+            "name": "com.amazonaws.ecs.capability.ecr-auth"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.21"
+        },
+        {
+            "name": "ecs.capability.execution-role-ecr-pull"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
+        },
+        {
+            "name": "ecs.capability.task-eni"
+        }
+    ],
+    "placementConstraints": [],
+    "compatibilities": [
+        "EC2",
+        "FARGATE",
+        "MANAGED_INSTANCES"
+    ],
+    "runtimePlatform": {
+        "cpuArchitecture": "X86_64",
+        "operatingSystemFamily": "LINUX"
+    },
+    "requiresCompatibilities": [
+        "EC2"
+    ],
+    "cpu": "1024",
+    "memory": "2048",
+    "registeredAt": "2026-11-12T21:25:22.123Z",
+    "registeredBy": "arn:aws:sts::065431568326:assumed-role/AccountFullAccessRole/d4686488-5071-7042-19c6-9b35f912e5c9",
+    "enableFaultInjection": false,
+    "tags": []
+}
