@@ -217,3 +217,75 @@ Nous avons aussi vérifié que nos ajouts ne cassent rien : le test PHPUnit pass
 ## 6. Remarque pour la suite
 
 Sur la branche de test, le job existant `lint-phpcs` est resté vert malgré le mauvais code. Son script transforme les erreurs en succès, donc il ne bloque jamais rien. C'est un point à reprendre dans la partie 5 sur la sécurité.
+
+---
+
+## 3.3. Déploiement sur AWS
+
+Le déploiement AWS est réalisé par le workflow GitHub Actions
+`.github/workflows/aws.yml`, déclenché lorsqu'un commit est poussé sur la branche
+`main`. Le workflow construit l'image Docker, la publie dans Amazon ECR, puis
+met à jour le service Amazon ECS avec cette nouvelle image.
+
+### 3.3.1. La définition de tâche ECS
+
+Le fichier [`aws/task_definition.json`](../aws/task_definition.json) est
+nécessaire au déploiement. Il décrit la manière dont ECS doit lancer le
+conteneur : nom du conteneur, image Docker, mémoire, port 80, mode réseau
+`awsvpc`, rôle d'exécution IAM et compatibilité avec EC2.
+
+Le workflow utilise l'action
+`amazon-ecs-render-task-definition` pour remplacer l'image indiquée dans cette
+définition par l'image nouvellement construite et identifiée par le SHA du
+commit. La définition rendue est ensuite envoyée à ECS par
+`amazon-ecs-deploy-task-definition`. Il est donc important de versionner ce
+fichier et de le maintenir en cohérence avec le nom réel du conteneur (`Main`).
+
+### 3.3.2. Variables et secrets du déploiement
+
+Les paramètres du déploiement sont stockés dans GitHub, dans l'environnement
+`production` du dépôt (**Settings > Environments > production**), et ne sont
+pas écrits en dur dans le workflow :
+
+| Type GitHub | Variables |
+|---|---|
+| **Variables** (`vars`) | `AWS_REGION`, `ECR_REPOSITORY`, `ECS_SERVICE`, `ECS_CLUSTER`, `ECS_TASK_DEFINITION`, `CONTAINER_NAME` |
+| **Secrets** (`secrets`) | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` |
+
+Les variables non sensibles servent à identifier les ressources AWS. Les clés
+d'accès sont des secrets GitHub et ne doivent jamais être commitées dans le
+dépôt, affichées dans les logs ou placées dans `task_definition.json`. Le rôle
+IAM utilisé par ces clés doit être limité aux permissions nécessaires pour
+construire/publier l'image ECR et déployer la tâche ECS.
+
+### 3.3.3. Ressources AWS à gérer
+
+Un déploiement ECS ne consiste pas uniquement à pousser une image. Les
+ressources suivantes doivent être créées, configurées et surveillées :
+
+1. **L'instance EC2 (ou la capacité ECS)** : comme la définition actuelle
+   demande la compatibilité `EC2`, une instance enregistrée dans le cluster,
+   avec l'agent ECS et un rôle IAM adaptés, doit être disponible. Il faut
+   gérer sa taille, son état, son groupe de sécurité, son réseau et sa
+   capacité à accueillir la tâche. Une alternative serait d'utiliser Fargate,
+   mais cela demanderait d'adapter `requiresCompatibilities` et la
+   configuration réseau.
+2. **Le cluster ECS** : il regroupe la capacité de calcul et sert de cible au
+   déploiement. Le nom est fourni par `ECS_CLUSTER`.
+3. **Le service ECS** : il maintient le nombre de tâches souhaité et lance une
+   nouvelle révision de la task definition. Le service est identifié par
+   `ECS_SERVICE`; l'option `wait-for-service-stability: true` demande à
+   GitHub Actions d'attendre que le service soit stable.
+4. **Le registre ECR** : il conserve les images Docker privées. L'action
+   `amazon-ecr-login` authentifie le job, puis l'image est poussée dans le
+   dépôt indiqué par `ECR_REPOSITORY`. Le tag correspondant au SHA du commit
+   permet de retrouver précisément la version déployée.
+5. **Les rôles IAM et le réseau** : le rôle d'exécution ECS doit permettre à
+   ECS de tirer l'image depuis ECR. Le VPC, les sous-réseaux, les groupes de
+   sécurité et les règles d'accès doivent aussi autoriser le trafic HTTP vers
+   le port 80 sans exposer inutilement l'instance ou le service.
+
+Le cycle complet est donc : **commit sur `main` → build Docker → push dans
+ECR → rendu de la task definition → nouvelle révision du service ECS → attente
+de la stabilité du service**. La disponibilité de l'instance, du cluster, du
+service et du registre est une condition préalable au succès du workflow.
