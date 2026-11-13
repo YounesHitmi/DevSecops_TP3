@@ -5,7 +5,7 @@
     <rule ref="PSR12"/>
     <!-- Include PHPCompatibility -->
     <rule ref="PHPCompatibility"/>
-    <!-- Check for cross-version support for PHP 7.4 and higher. -->
-    <config name="testVersion" value="7.4-"/>
+    <!-- Check for cross-version support for PHP 8.2 and higher (composer.json requires >= 8.2). -->
+    <config name="testVersion" value="8.2-"/>
     <config name="installed_paths" value="vendor/phpcompatibility/php-compatibility" />
 </ruleset>

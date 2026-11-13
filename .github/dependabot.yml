@@ -1,0 +1,16 @@
+# Dependabot: opens a PR when a dependency has a new version (security fixes included).
+# Each PR goes through the CircleCI pipeline before it can be merged.
+version: 2
+updates:
+  - package-ecosystem: "composer"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/Docker"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

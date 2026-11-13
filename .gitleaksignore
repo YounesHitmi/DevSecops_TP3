@@ -1,0 +1,4 @@
+# Infisical client secret committed by mistake in c43ab53 (removed in 3985ed7).
+# The secret was revoked and replaced in Infisical, so this old value is useless.
+# Ignored here so that the security-scan-secrets job only fails on NEW leaks.
+c43ab538d3db76523e09126d95963650b2697262:.env.infisical:generic-api-key:2

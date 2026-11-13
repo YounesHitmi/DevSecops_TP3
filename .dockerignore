@@ -29,3 +29,6 @@ Docker
 .phpunit.result.cache
 .vagrant
 vendor
+
+# Debug page: never shipped in the image (it prints all environment variables)
+public/info.php
