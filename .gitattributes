@@ -1,2 +1,4 @@
 # Shell scripts must keep Unix line endings, otherwise they fail inside Linux containers.
 *.sh text eol=lf
+# PHP files: Unix line endings (PSR-12, checked by the blocking lint-phpcs job)
+*.php text eol=lf

@@ -1,0 +1,6 @@
+# hadolint rules (job lint-hadolint)
+ignored:
+  # DL3008 "pin versions in apt-get install": Debian removes old package versions
+  # from its mirrors when a security fix is published, so pinned versions break the
+  # build. Instead we pin the base image by digest and run `apt-get upgrade`.
+  - DL3008

@@ -115,15 +115,10 @@ jobs:
           name: Install PHP_CodeSniffer and PHPCompatibility
           command: composer require --dev "squizlabs/php_codesniffer=*" "phpcompatibility/php-compatibility=*"
       - run:
+          # Part 5: the job is now blocking (before, exit codes 1 and 2 were turned into success)
           name: Run PHP_CodeSniffer with Custom Ruleset in the project root
           command: |
-            ./vendor/bin/phpcs --standard=phpcs.xml --report-file=phpcs-report.txt --report=checkstyle --extensions=php --ignore=vendor/ .
-            result=$?
-            if [ $result -eq 1 ] || [ $result -eq 2 ]; then
-              exit 0
-            else
-              exit $result
-            fi
+            ./vendor/bin/phpcs --standard=phpcs.xml --report=full --report-checkstyle=phpcs-report.txt --extensions=php --ignore=vendor/ .
       - store_artifacts:
           path: phpcs-report.txt
           destination: phpcs-report
@@ -135,16 +130,57 @@ jobs:
     steps:
       - *attach_workspace
       - run:
-          name: Install local-php-security-checker
+          # Part 5: local-php-security-checker did not detect CVE-2025-22145 (nesbot/carbon).
+          # composer audit uses the GitHub/Packagist advisories and fails if a production dependency is vulnerable.
+          name: Audit production dependencies (composer audit)
           command: |
-            curl -L -o local-php-security-checker https://github.com/fabpot/local-php-security-checker/releases/download/v2.0.6/local-php-security-checker_2.0.6_linux_amd64
-            chmod +x local-php-security-checker
-      - run:
-          name: Run local-php-security-checker
-          command: ./local-php-security-checker --format=json --no-dev > security-report.json
+            set -uo pipefail
+            composer audit --no-dev --format=json > security-report.json
+            status=$?
+            composer audit --no-dev || true
+            exit $status
       - store_artifacts:
           path: security-report.json
           destination: security-report
+
+
+  lint-hadolint:
+    executor: simple-executor
+    environment:
+      HADOLINT_VERSION: 2.12.0
+      HADOLINT_SHA256: 56de6d5e5ec427e17b74fa48d51271c7fc0d61244bf5c90e828aab8362d55010
+    steps:
+      - checkout
+      - run:
+          name: Download hadolint (pinned version + checksum)
+          command: |
+            set -euo pipefail
+            curl -sSfL -o hadolint "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-x86_64"
+            echo "${HADOLINT_SHA256}  hadolint" | sha256sum -c -
+            chmod +x hadolint
+      - run:
+          name: Lint the Dockerfile (rules in .hadolint.yaml)
+          command: ./hadolint Docker/Dockerfile
+
+
+  security-scan-secrets:
+    executor: simple-executor
+    environment:
+      GITLEAKS_VERSION: 8.21.2
+      GITLEAKS_SHA256: 5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba
+    steps:
+      - checkout
+      - run:
+          name: Download gitleaks (pinned version + checksum)
+          command: |
+            set -euo pipefail
+            curl -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+            echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+            tar -xzf gitleaks.tar.gz gitleaks
+      - run:
+          # Scans the whole git history. Old, revoked secrets are listed in .gitleaksignore.
+          name: Search secrets in the git history
+          command: ./gitleaks git . --redact --verbose --no-banner
 
 
 
@@ -235,14 +271,18 @@ jobs:
 
   build-docker-image:
     executor: builder-executor
+    environment:
+      TRIVY_VERSION: 0.74.0
+      TRIVY_SHA256: 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
     steps:
       - checkout
       - setup_remote_docker:
           version: default
       - run:
-          name: Build and Push Docker Image to GHCR (GitHub Container Registry)
+          name: Build the Docker image
           command: |
-            if [ ! -z "$SKIP_BUILD" ]; then
+            set -euo pipefail
+            if [ -n "${SKIP_BUILD:-}" ]; then
               echo "Skipping build"
               circleci step halt
               exit 0
@@ -251,11 +291,8 @@ jobs:
             # Sanitize the repository name and branch name
             REPOSITORY=$(echo "ghcr.io/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME" | tr '[:upper:]' '[:lower:]' | tr -d '_')
             TAG=$(echo $CIRCLE_BRANCH | tr '[:upper:]' '[:lower:]' | tr '/' '-' | tr -cd '[:alnum:]._-' | cut -c 1-128)
+            echo "export IMAGE=$REPOSITORY:$TAG" >> "$BASH_ENV"
 
-            # Login to GHCR
-            echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
-
-            # Build the Docker image
             docker build \
             -f Docker/Dockerfile \
             -t $REPOSITORY:$TAG \
@@ -263,13 +300,35 @@ jobs:
             --build-arg TAG="${TAG}" \
             --build-arg GIT_COMMIT=$(git rev-parse -q --verify HEAD) \
             --build-arg GIT_URL=$(echo ${CIRCLE_REPOSITORY_URL} | sed -e 's/^git@/https:\/\//g' -e 's/\.git$//g' -e 's/:/\//g') \
-            --build-arg SQLITE_VERSION=3430200 \
-            --build-arg SQLITE_YEAR=2023 \
             --build-arg PROJECT_USERNAME=$CIRCLE_PROJECT_USERNAME \
             .
-
-            # Push the Docker image
-            docker push $REPOSITORY:$TAG
+      - run:
+          name: Download Trivy (pinned version + checksum)
+          command: |
+            set -euo pipefail
+            curl -sSfL -o trivy.tar.gz "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+            echo "${TRIVY_SHA256}  trivy.tar.gz" | sha256sum -c -
+            tar -xzf trivy.tar.gz trivy
+      - run:
+          name: Scan the image with Trivy (full report)
+          command: |
+            set -euo pipefail
+            docker save -o image.tar "$IMAGE"
+            ./trivy image --input image.tar --scanners vuln --severity HIGH,CRITICAL --format table -o trivy-report.txt
+            head -n 40 trivy-report.txt
+      - store_artifacts:
+          path: trivy-report.txt
+          destination: trivy-report/trivy-report.txt
+      - run:
+          # Security gate: the image is NOT pushed if it has a CRITICAL vulnerability that already has a fix.
+          name: Security gate - no fixable CRITICAL vulnerability
+          command: ./trivy image --input image.tar --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 --skip-db-update
+      - run:
+          name: Push the Docker image to GHCR (GitHub Container Registry)
+          command: |
+            set -euo pipefail
+            echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+            docker push "$IMAGE"
 
 
   deploy-ssh-staging:
@@ -292,7 +351,8 @@ jobs:
 
 
 #  deploy-ssh-production:
-# It's up to you :)
+# Part 3.3: production is deployed on AWS (ECR + ECS on EC2) by GitHub Actions,
+# see .github/workflows/aws.yml (triggered by a push on main).
 
 
 workflows:
@@ -321,8 +381,19 @@ workflows:
       - lint-php-doc-check:
           requires:
             - build-setup
+      - lint-hadolint
+      - security-scan-secrets
       - hold:
           type: approval
+          # Part 5: the approval is only possible once every blocking check is green
+          requires:
+            - lint-phpcs
+            - lint-phpmd
+            - lint-php-doc-check
+            - lint-hadolint
+            - test-phpunit
+            - security-check-dependencies
+            - security-scan-secrets
           filters:
             branches:
               only:

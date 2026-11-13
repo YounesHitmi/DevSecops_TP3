@@ -24,8 +24,8 @@ class ImageCreator
 
 
     public function __construct(
-        array  $yourColor = [128, 128, 128],
-        array  $yourColor2 = [60, 80, 57],
+        array $yourColor = [128, 128, 128],
+        array $yourColor2 = [60, 80, 57],
         string $text = "DEVOPS",
         string $text2 = "Une superbe image"
     ) {
