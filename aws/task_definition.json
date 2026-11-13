@@ -1,11 +1,11 @@
 {
-    "taskDefinitionArn": "arn:aws:ecs:eu-north-1:065431568326:task-definition/polished-service-1b8o1s:1",
+    "taskDefinitionArn": "arn:aws:ecs:eu-north-1:065431568326:task-definition/polished-service-1b8o1s:5",
     "containerDefinitions": [
         {
             "name": "Main",
-            "image": "065431568326.dkr.ecr.eu-north-1.amazonaws.com/pns/devsecops/tp3:latest",
+            "image": "065431568326.dkr.ecr.eu-north-1.amazonaws.com/pns/devsecops/tp3:0cb2a83c36754020c058d72487f1bb0fa54b60f8",
             "cpu": 0,
-            "memory": 2048,
+            "memory": 1024,
             "memoryReservation": 1024,
             "portMappings": [
                 {
@@ -18,17 +18,15 @@
             ],
             "essential": true,
             "environment": [],
-            "environmentFiles": [],
             "mountPoints": [],
             "volumesFrom": [],
-            "ulimits": [],
             "systemControls": []
         }
     ],
     "family": "polished-service-1b8o1s",
     "executionRoleArn": "arn:aws:iam::065431568326:role/ecsTaskExecutionRole",
-    "networkMode": "awsvpc",
-    "revision": 1,
+    "networkMode": "bridge",
+    "revision": 5,
     "volumes": [],
     "status": "ACTIVE",
     "requiresAttributes": [
@@ -40,19 +38,11 @@
         },
         {
             "name": "ecs.capability.execution-role-ecr-pull"
-        },
-        {
-            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
-        },
-        {
-            "name": "ecs.capability.task-eni"
         }
     ],
     "placementConstraints": [],
     "compatibilities": [
-        "EC2",
-        "FARGATE",
-        "MANAGED_INSTANCES"
+        "EC2"
     ],
     "runtimePlatform": {
         "cpuArchitecture": "X86_64",
@@ -62,8 +52,8 @@
         "EC2"
     ],
     "cpu": "1024",
-    "memory": "2048",
-    "registeredAt": "2026-11-12T21:25:22.123Z",
+    "memory": "1024",
+    "registeredAt": "2026-11-13T17:12:19.959Z",
     "registeredBy": "arn:aws:sts::065431568326:assumed-role/AccountFullAccessRole/d4686488-5071-7042-19c6-9b35f912e5c9",
     "enableFaultInjection": false,
     "tags": []
